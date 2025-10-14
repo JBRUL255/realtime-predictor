@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
-import time
 
 # ---- Page Setup ----
 st.set_page_config(page_title="✈️ Aviator Live", layout="wide")
@@ -17,6 +16,15 @@ threshold = st.sidebar.slider("Threshold", 1.0, 10.0, 2.0, 0.1)
 auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
 refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 3, 30, 5)
 
+# ---- Auto Refresh ----
+if auto_refresh:
+    st.sidebar.info(f"🔁 Refreshing every {refresh_interval} seconds")
+    # This automatically refreshes the app
+    st_autorefresh = st.experimental_data_editor if False else None  # no-op placeholder
+    st_autorefresh = st.autorefresh  # for compatibility
+    st_autorefresh(interval=refresh_interval * 1000, key="aviator_refresh")
+
+# ---- Prediction ----
 if st.sidebar.button("Predict"):
     try:
         r = requests.get(f"{BACKEND_URL}/predict", params={"threshold": threshold}, timeout=15)
@@ -28,13 +36,6 @@ if st.sidebar.button("Predict"):
             st.error(f"Invalid response: {pred}")
     except Exception as e:
         st.error(f"Predict error: {e}")
-
-# ---- Auto Refresh ----
-if auto_refresh:
-    st_autorefresh = st.experimental_rerun
-    st.info(f"Auto-refreshing every {refresh_interval}s...")
-    time.sleep(refresh_interval)
-    st.experimental_rerun()
 
 # ---- Latest Rounds ----
 st.subheader("Latest Rounds")
@@ -53,3 +54,4 @@ try:
         st.warning(f"Server returned: {r.status_code}")
 except Exception as e:
     st.error(f"Cannot fetch rounds: {e}")
+
