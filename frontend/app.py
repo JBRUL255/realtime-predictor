@@ -159,4 +159,4 @@ while True:
                        unsafe_allow_html=True)
 
     time.sleep(REFRESH_SECONDS)
-    st.experimental_rerun()
+    st.rerun()
