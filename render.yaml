@@ -1,0 +1,42 @@
+services:
+  # ----------------------------
+  # BACKEND SERVICE (FastAPI)
+  # ----------------------------
+  - type: web
+    name: aviator-backend
+    env: docker
+    plan: free
+    autoDeploy: true
+    rootDir: backend
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PLAYWRIGHT_HEADLESS
+        value: "1"
+      - key: DATABASE_URL
+        value: "sqlite:///./aviator.db"
+      - key: AVIATOR_PAGE_URL
+        value: "https://www.betika.com/en-ke/aviator"
+      - key: PLAYWRIGHT_STORAGE_STATE
+        value: "/tmp/playwright_storage.json"
+    healthCheckPath: /health
+    disk:
+      name: aviator-db
+      mountPath: /app
+      sizeGB: 1
+
+  # ----------------------------
+  # FRONTEND SERVICE (Streamlit)
+  # ----------------------------
+  - type: web
+    name: aviator-frontend
+    env: docker
+    plan: free
+    autoDeploy: true
+    rootDir: frontend
+    envVars:
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: aviator-backend
+          property: url
