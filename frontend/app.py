@@ -1,73 +1,79 @@
 import streamlit as st
-import requests
 import pandas as pd
-import os
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime
+import pytz
+import time
 
-# ---------------------------------------------------------
-# 🌍 CONFIG
-# ---------------------------------------------------------
-st.set_page_config(page_title="Aviator Live", layout="wide")
-BACKEND_URL = os.getenv("BACKEND_URL", "https://realtime-predictor-backend.onrender.com")  # <-- replace with your backend URL
-
-# ---------------------------------------------------------
-# 🛫 HEADER
-# ---------------------------------------------------------
-st.title("✈️ Aviator Live (Collector + Predictor)")
-
-# ---------------------------------------------------------
-# 🔁 AUTO REFRESH (every 5 seconds)
-# ---------------------------------------------------------
-# Streamlit built-in auto-refresh
-st_autorefresh = getattr(st, "autorefresh", None)
-if st_autorefresh:
-    st_autorefresh(interval=5000, limit=None, key="data_refresh")
-else:
-    # fallback if Streamlit <1.26
-    st.experimental_rerun()
-
-# ---------------------------------------------------------
-# ⚙️ CONTROLS
-# ---------------------------------------------------------
-st.sidebar.header("Controls")
-threshold = st.sidebar.slider("Threshold", 1.0, 10.0, 2.0, 0.1)
-
-if st.sidebar.button("Predict"):
-    try:
-        r = requests.get(f"{BACKEND_URL}/predict", params={"threshold": threshold}, timeout=10)
-        r.raise_for_status()
-        pred = r.json()
-        st.metric(f"P(next ≥ {pred['threshold']})", f"{pred['probability']:.2%}")
-    except Exception as e:
-        st.error(f"Predict error: {e}")
-
-# ---------------------------------------------------------
-# 📊 LATEST ROUNDS TABLE
-# ---------------------------------------------------------
-st.subheader("Latest Rounds")
-
-try:
-    r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
-    if r.status_code == 200:
-        data = r.json()
-        df = pd.DataFrame(data)
-
-        # ✅ Convert timestamp to Kenya time
-        if "ts" in df.columns:
-            df["ts"] = pd.to_datetime(df["ts"], errors="coerce")
-            df["ts"] = df["ts"] + timedelta(hours=3)  # convert UTC → EAT (Kenya)
-            df = df.sort_values("ts", ascending=False)
-
-        st.dataframe(df.head(100), use_container_width=True)
-    else:
-        st.info(f"No rounds yet or server returned: {r.status_code}")
-except Exception as e:
-    st.error(f"Cannot fetch rounds: {e}")
-
-# ---------------------------------------------------------
-# 📝 FOOTER
-# ---------------------------------------------------------
-st.markdown(
-    "<small>🕒 Data auto-refreshes every 5 seconds | Timezone: EAT (UTC+3)</small>",
-    unsafe_allow_html=True,
+# --- CONFIG ---
+st.set_page_config(
+    page_title="✈️ Aviator Live (Collector + Predictor)",
+    layout="wide",
+    page_icon="✈️"
 )
+
+API_BASE = "https://realtime-predictor.onrender.com"
+REFRESH_INTERVAL = 10  # seconds
+TIMEZONE = pytz.timezone("Africa/Nairobi")
+
+# --- PAGE HEADER ---
+st.title("✈️ Aviator Live (Collector + Predictor)")
+st.caption("Real-time rounds and predicted multipliers — synced to Kenyan Time 🇰🇪")
+
+# --- REFRESH CONTROL ---
+st.sidebar.header("⚙️ Controls")
+auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
+st.sidebar.write(f"Refresh every {REFRESH_INTERVAL} seconds when enabled.")
+
+# --- FETCH DATA ---
+def fetch_latest_rounds():
+    try:
+        res = requests.get(f"{API_BASE}/latest-rounds", timeout=10)
+        if res.status_code == 200:
+            return pd.DataFrame(res.json())
+        else:
+            st.error(f"Failed to fetch rounds (status {res.status_code})")
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Cannot fetch rounds: {e}")
+        return pd.DataFrame()
+
+def fetch_prediction():
+    try:
+        res = requests.get(f"{API_BASE}/predict", timeout=10)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            return {"error": f"Prediction failed ({res.status_code})"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- DISPLAY LATEST ROUNDS ---
+st.subheader("🕒 Latest Rounds")
+
+df = fetch_latest_rounds()
+if not df.empty:
+    # Convert timestamps to Kenyan time
+    df['ts'] = pd.to_datetime(df['ts']).dt.tz_localize("UTC").dt.tz_convert(TIMEZONE)
+    df = df.sort_values(by="ts", ascending=False).reset_index(drop=True)
+    st.dataframe(df, use_container_width=True)
+else:
+    st.warning("No round data available yet. Waiting for updates...")
+
+# --- PREDICTION SECTION ---
+st.subheader("🎯 Current Prediction")
+prediction = fetch_prediction()
+
+if "error" in prediction:
+    st.error(prediction["error"])
+else:
+    multiplier = prediction.get("predicted_multiplier", "N/A")
+    conf = prediction.get("confidence", "N/A")
+    st.metric(label="Predicted Multiplier", value=f"{multiplier}")
+    st.caption(f"Confidence: {conf}")
+
+# --- AUTO REFRESH LOOP ---
+if auto_refresh:
+    time.sleep(REFRESH_INTERVAL)
+    st.rerun()
+
