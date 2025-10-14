@@ -1,79 +1,65 @@
+# frontend/app.py
 import streamlit as st
-import pandas as pd
 import requests
+import pandas as pd
+import os
 from datetime import datetime
 import pytz
 import time
 
-# --- CONFIG ---
-st.set_page_config(
-    page_title="✈️ Aviator Live (Collector + Predictor)",
-    layout="wide",
-    page_icon="✈️"
-)
+st.set_page_config(page_title="Aviator Live Predictor", layout="wide")
 
-API_BASE = "https://realtime-predictor.onrender.com"
-REFRESH_INTERVAL = 10  # seconds
-TIMEZONE = pytz.timezone("Africa/Nairobi")
+# Backend URL (Render service or localhost)
+BACKEND_URL = os.getenv("BACKEND_URL", "https://your-backend-service.onrender.com")
 
-# --- PAGE HEADER ---
-st.title("✈️ Aviator Live (Collector + Predictor)")
-st.caption("Real-time rounds and predicted multipliers — synced to Kenyan Time 🇰🇪")
+# Kenyan timezone
+KE_TZ = pytz.timezone("Africa/Nairobi")
 
-# --- REFRESH CONTROL ---
-st.sidebar.header("⚙️ Controls")
-auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
-st.sidebar.write(f"Refresh every {REFRESH_INTERVAL} seconds when enabled.")
+st.title("✈️ Aviator Live Predictor Dashboard")
 
-# --- FETCH DATA ---
-def fetch_latest_rounds():
+st.sidebar.header("🎛 Controls")
+threshold = st.sidebar.slider("Prediction Threshold", 1.0, 10.0, 2.0, 0.1)
+risk = st.sidebar.slider("Risk Factor (Higher = Riskier)", 0.1, 1.0, 0.3, 0.05)
+
+if st.sidebar.button("🔮 Predict Next Round"):
     try:
-        res = requests.get(f"{API_BASE}/latest-rounds", timeout=10)
-        if res.status_code == 200:
-            return pd.DataFrame(res.json())
-        else:
-            st.error(f"Failed to fetch rounds (status {res.status_code})")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Cannot fetch rounds: {e}")
-        return pd.DataFrame()
+        r = requests.get(f"{BACKEND_URL}/predict", params={"threshold": threshold, "risk": risk}, timeout=15)
+        r.raise_for_status()
+        pred = r.json()
 
-def fetch_prediction():
+        st.subheader("🎯 Current Prediction")
+        st.metric("Predicted Multiplier", f"{pred['predicted_multiplier']}x")
+        st.metric("Confidence", f"{pred['confidence'] * 100:.0f}%")
+        st.markdown(f"💰 **Suggested Cashout Point:** `{pred['cashout_point']}x`")
+
+    except Exception as e:
+        st.error(f"Prediction failed: {e}")
+
+st.divider()
+st.subheader("📊 Latest Game Rounds")
+
+# Auto-refresh every 5 seconds
+while True:
     try:
-        res = requests.get(f"{API_BASE}/predict", timeout=10)
-        if res.status_code == 200:
-            return res.json()
+        r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if len(data) == 0:
+                st.info("No round data available yet. Waiting for updates...")
+            else:
+                df = pd.DataFrame(data)
+                if "ts" in df.columns:
+                    df["ts"] = pd.to_datetime(df["ts"])
+                df = df.sort_values(by="ts", ascending=False)
+                st.dataframe(df.head(20), use_container_width=True)
         else:
-            return {"error": f"Prediction failed ({res.status_code})"}
+            st.warning(f"Failed to fetch rounds (status {r.status_code})")
     except Exception as e:
-        return {"error": str(e)}
+        st.error(f"Failed to fetch rounds: {e}")
 
-# --- DISPLAY LATEST ROUNDS ---
-st.subheader("🕒 Latest Rounds")
+    # Kenyan time at bottom
+    st.caption(f"🕒 Updated at: {datetime.now(KE_TZ).strftime('%Y-%m-%d %H:%M:%S')} EAT")
 
-df = fetch_latest_rounds()
-if not df.empty:
-    # Convert timestamps to Kenyan time
-    df['ts'] = pd.to_datetime(df['ts']).dt.tz_localize("UTC").dt.tz_convert(TIMEZONE)
-    df = df.sort_values(by="ts", ascending=False).reset_index(drop=True)
-    st.dataframe(df, use_container_width=True)
-else:
-    st.warning("No round data available yet. Waiting for updates...")
-
-# --- PREDICTION SECTION ---
-st.subheader("🎯 Current Prediction")
-prediction = fetch_prediction()
-
-if "error" in prediction:
-    st.error(prediction["error"])
-else:
-    multiplier = prediction.get("predicted_multiplier", "N/A")
-    conf = prediction.get("confidence", "N/A")
-    st.metric(label="Predicted Multiplier", value=f"{multiplier}")
-    st.caption(f"Confidence: {conf}")
-
-# --- AUTO REFRESH LOOP ---
-if auto_refresh:
-    time.sleep(REFRESH_INTERVAL)
-    st.rerun()
-
+    # Wait before refreshing
+    time.sleep(5)
+    st.experimental_rerun()
