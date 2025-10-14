@@ -30,33 +30,8 @@ if st.sidebar.button("Predict"):
     except Exception as e:
         st.error(f"Predict error: {e}")
 
-# ---- Live Refresh Loop ----
-if auto_refresh:
-    placeholder = st.empty()
-    last_refresh = time.time()
-    while True:
-        with placeholder.container():
-            st.subheader("Latest Rounds")
-            try:
-                r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
-                if r.status_code == 200:
-                    data = r.json()
-                    if isinstance(data, list) and data:
-                        df = pd.DataFrame(data)
-                        if "ts" in df.columns:
-                            df["ts"] = pd.to_datetime(df["ts"])
-                        st.dataframe(df.tail(50).sort_values(by="ts", ascending=False),
-                                     use_container_width=True)
-                    else:
-                        st.info("No rounds yet.")
-                else:
-                    st.warning(f"Server returned: {r.status_code}")
-            except Exception as e:
-                st.error(f"Cannot fetch rounds: {e}")
-
-        time.sleep(refresh_interval)
-        st.experimental_rerun()
-else:
+# ---- Display Latest Rounds ----
+def display_rounds():
     st.subheader("Latest Rounds")
     try:
         r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
@@ -74,3 +49,19 @@ else:
             st.warning(f"Server returned: {r.status_code}")
     except Exception as e:
         st.error(f"Cannot fetch rounds: {e}")
+
+# ---- Refresh Loop ----
+display_rounds()
+
+if auto_refresh:
+    st.sidebar.info(f"🔁 Refreshing every {refresh_interval} seconds...")
+    time.sleep(refresh_interval)
+    try:
+        # Works for Streamlit >= 1.28
+        st.rerun()
+    except AttributeError:
+        # Backwards compatibility for older Streamlit
+        try:
+            st.experimental_rerun()
+        except AttributeError:
+            st.warning("Auto-refresh not supported on this Streamlit version.")
