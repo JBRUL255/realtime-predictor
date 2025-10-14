@@ -1,3 +1,8 @@
+streamlit>=1.32.0
 fastapi
 uvicorn
 playwright
+pandas
+requests
+pytz
+plotly
