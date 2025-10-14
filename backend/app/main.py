@@ -1,14 +1,14 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 import random
 import threading
 import time
 
-app = FastAPI(title="Aviator Predictor API", version="2.0")
+app = FastAPI(title="Aviator Predictor API", version="3.0")
 
 # ------------------------------------------------------------
-# CORS SETTINGS (Allow frontend to call this API)
+# CORS SETTINGS (allow frontend Render app to call API)
 # ------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -19,26 +19,24 @@ app.add_middleware(
 )
 
 # ------------------------------------------------------------
-# SIMULATED GAME DATA
+# GLOBAL DATA STORE
 # ------------------------------------------------------------
-rounds = []  # store game rounds
+rounds = []  # in-memory list for storing simulated rounds
 
 def generate_rounds():
-    """Simulate Aviator rounds every 10 seconds."""
+    """Simulate Aviator game rounds every 10 seconds."""
     while True:
-        # simulate random multiplier values
         multiplier = round(random.uniform(1.0, 20.0), 2)
-        # add new round with Kenyan time
         rounds.append({
-            "ts": (datetime.utcnow() + timedelta(hours=3)).isoformat(timespec="seconds"),
+            "ts": datetime.utcnow().isoformat(timespec="seconds"),  # UTC for frontend to convert
             "multiplier": multiplier
         })
-        # keep only the last 500 rounds to avoid memory bloat
+        # keep only last 500 rounds
         if len(rounds) > 500:
             rounds.pop(0)
         time.sleep(10)
 
-# Start background thread when server boots
+# start simulation thread
 threading.Thread(target=generate_rounds, daemon=True).start()
 
 # ------------------------------------------------------------
@@ -47,22 +45,30 @@ threading.Thread(target=generate_rounds, daemon=True).start()
 
 @app.get("/")
 def root():
-    """Simple health check endpoint."""
+    """Health check endpoint."""
     return {"status": "running", "message": "Aviator Predictor Backend Active 🚀"}
 
-@app.get("/rounds")
-def get_rounds():
-    """Return latest Aviator rounds."""
-    return rounds[-100:][::-1]  # last 100, newest first
+@app.get("/latest-rounds")
+def get_latest_rounds():
+    """Return latest 100 Aviator rounds."""
+    return rounds[-100:][::-1]  # newest first
 
 @app.get("/predict")
-def predict(threshold: float = Query(2.0, description="Prediction threshold")):
-    """Return mock probability that next round ≥ threshold."""
-    # basic fake probability model
-    probability = max(0.0, 1.0 - (threshold / 20.0) + random.uniform(-0.1, 0.1))
-    probability = round(probability, 2)
+def predict():
+    """Simulate prediction of the next multiplier."""
+    # calculate fake prediction using last rounds
+    if not rounds:
+        predicted_multiplier = round(random.uniform(1.0, 10.0), 2)
+    else:
+        last_10 = [r["multiplier"] for r in rounds[-10:]]
+        avg_recent = sum(last_10) / len(last_10)
+        predicted_multiplier = round(random.uniform(1.0, 1.5) * avg_recent, 2)
+        predicted_multiplier = min(predicted_multiplier, 20.0)
+
+    confidence = round(random.uniform(0.70, 0.99), 2)
+
     return {
-        "threshold": threshold,
-        "probability": probability,
-        "timestamp": (datetime.utcnow() + timedelta(hours=3)).isoformat(timespec="seconds")
+        "predicted_multiplier": predicted_multiplier,
+        "confidence": f"{confidence:.0%}",
+        "timestamp": datetime.utcnow().isoformat(timespec="seconds")
     }
