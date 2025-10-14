@@ -1,0 +1,13 @@
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+*.sqlite3
+aviator.db
+backend/aviator.db
+/tmp/playwright_storage.json
+*.log
+node_modules/
+.vscode/
