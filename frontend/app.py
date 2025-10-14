@@ -2,66 +2,72 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
-import time
+from datetime import datetime, timedelta
 
-# ---- Page Setup ----
-st.set_page_config(page_title="✈️ Aviator Live", layout="wide")
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+# ---------------------------------------------------------
+# 🌍 CONFIG
+# ---------------------------------------------------------
+st.set_page_config(page_title="Aviator Live", layout="wide")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://realtime-predictor-backend.onrender.com")  # <-- replace with your backend URL
 
-# ---- UI Header ----
+# ---------------------------------------------------------
+# 🛫 HEADER
+# ---------------------------------------------------------
 st.title("✈️ Aviator Live (Collector + Predictor)")
+
+# ---------------------------------------------------------
+# 🔁 AUTO REFRESH (every 5 seconds)
+# ---------------------------------------------------------
+# Streamlit built-in auto-refresh
+st_autorefresh = getattr(st, "autorefresh", None)
+if st_autorefresh:
+    st_autorefresh(interval=5000, limit=None, key="data_refresh")
+else:
+    # fallback if Streamlit <1.26
+    st.experimental_rerun()
+
+# ---------------------------------------------------------
+# ⚙️ CONTROLS
+# ---------------------------------------------------------
 st.sidebar.header("Controls")
-
-# ---- Sidebar Controls ----
 threshold = st.sidebar.slider("Threshold", 1.0, 10.0, 2.0, 0.1)
-auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
-refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 3, 30, 5)
 
-# ---- Prediction ----
 if st.sidebar.button("Predict"):
     try:
-        r = requests.get(f"{BACKEND_URL}/predict", params={"threshold": threshold}, timeout=15)
+        r = requests.get(f"{BACKEND_URL}/predict", params={"threshold": threshold}, timeout=10)
         r.raise_for_status()
         pred = r.json()
-        if "probability" in pred:
-            st.metric(f"P(next ≥ {pred['threshold']})", f"{pred['probability']:.2%}")
-        else:
-            st.error(f"Invalid response: {pred}")
+        st.metric(f"P(next ≥ {pred['threshold']})", f"{pred['probability']:.2%}")
     except Exception as e:
         st.error(f"Predict error: {e}")
 
-# ---- Display Latest Rounds ----
-def display_rounds():
-    st.subheader("Latest Rounds")
-    try:
-        r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and data:
-                df = pd.DataFrame(data)
-                if "ts" in df.columns:
-                    df["ts"] = pd.to_datetime(df["ts"])
-                st.dataframe(df.tail(50).sort_values(by="ts", ascending=False),
-                             use_container_width=True)
-            else:
-                st.info("No rounds yet.")
-        else:
-            st.warning(f"Server returned: {r.status_code}")
-    except Exception as e:
-        st.error(f"Cannot fetch rounds: {e}")
+# ---------------------------------------------------------
+# 📊 LATEST ROUNDS TABLE
+# ---------------------------------------------------------
+st.subheader("Latest Rounds")
 
-# ---- Refresh Loop ----
-display_rounds()
+try:
+    r = requests.get(f"{BACKEND_URL}/rounds", timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        df = pd.DataFrame(data)
 
-if auto_refresh:
-    st.sidebar.info(f"🔁 Refreshing every {refresh_interval} seconds...")
-    time.sleep(refresh_interval)
-    try:
-        # Works for Streamlit >= 1.28
-        st.rerun()
-    except AttributeError:
-        # Backwards compatibility for older Streamlit
-        try:
-            st.experimental_rerun()
-        except AttributeError:
-            st.warning("Auto-refresh not supported on this Streamlit version.")
+        # ✅ Convert timestamp to Kenya time
+        if "ts" in df.columns:
+            df["ts"] = pd.to_datetime(df["ts"], errors="coerce")
+            df["ts"] = df["ts"] + timedelta(hours=3)  # convert UTC → EAT (Kenya)
+            df = df.sort_values("ts", ascending=False)
+
+        st.dataframe(df.head(100), use_container_width=True)
+    else:
+        st.info(f"No rounds yet or server returned: {r.status_code}")
+except Exception as e:
+    st.error(f"Cannot fetch rounds: {e}")
+
+# ---------------------------------------------------------
+# 📝 FOOTER
+# ---------------------------------------------------------
+st.markdown(
+    "<small>🕒 Data auto-refreshes every 5 seconds | Timezone: EAT (UTC+3)</small>",
+    unsafe_allow_html=True,
+)
