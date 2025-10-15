@@ -1,75 +1,78 @@
+# frontend/app.py
 import streamlit as st
 import requests
+import pandas as pd
 import time
 from datetime import datetime
 import pytz
-import plotly.graph_objects as go
 
-st.set_page_config(page_title="Aviator Flight Dashboard ✈️", layout="centered")
+st.set_page_config(page_title="Aviator Risk Analyzer", layout="wide")
 
-# Backend URL
-BACKEND_URL = "https://realtime-predictor.onrender.com"
+# Backend URL — provide as Render env var or input here
+BACKEND_URL = st.secrets.get("BACKEND_URL") or st.sidebar.text_input("Backend URL", "http://localhost:8000")
 
-# Title
-st.title("🛫 Aviator Flight Dashboard — Live Prediction")
+KE_TZ = pytz.timezone("Africa/Nairobi")
 
-# Select Room
-room = st.selectbox("Select Aviator Room", ["1", "2", "3"])
-st.markdown("---")
+st.title("Aviator Risk Analyzer — Rooms 1,2,3 (Kenya time)")
 
-placeholder = st.empty()
+# Controls
+room = st.sidebar.selectbox("Select room", ["1", "2", "3"])
+lookback = st.sidebar.slider("Lookback rounds (max used for stats)", 50, 2000, 500, step=50)
+target_prob_pct = st.sidebar.slider("Desired empirical success probability (%)", 50, 95, 70)
+target_prob = target_prob_pct / 100.0
 
-def get_kenya_time():
-    tz = pytz.timezone("Africa/Nairobi")
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+if st.sidebar.button("Refresh now"):
+    st.experimental_rerun()
 
-def fetch_data(endpoint):
+# Helpers
+def safe_get_json(path, params=None, timeout=10):
     try:
-        res = requests.get(f"{BACKEND_URL}/{endpoint}", timeout=10)
-        if res.status_code == 200:
-            return res.json()
-    except Exception:
+        r = requests.get(f"{BACKEND_URL}/{path}", params=params, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        st.error(f"Failed: {path} → {e}")
         return None
-    return None
 
-# Automatically retry and switch rooms if one fails
-def smart_fetch(endpoint):
-    result = fetch_data(endpoint)
-    if result is None or ("detail" in result if isinstance(result, dict) else False):
-        # Switch to next available room
-        current = int(room)
-        alt_room = str((current % 3) + 1)
-        st.warning(f"Room {room} unavailable — switching to Room {alt_room}")
-        time.sleep(1)
-        return fetch_data(endpoint.replace(f"/{room}", f"/{alt_room}"))
-    return result
+# Fetch rounds table
+st.subheader(f"Room {room} — recent rounds (live sample)")
+rounds_resp = safe_get_json(f"rounds/{room}", params={"limit": lookback})
+if rounds_resp and "rounds" in rounds_resp:
+    df = pd.DataFrame(rounds_resp["rounds"])
+    if not df.empty:
+        # convert timestamps to Kenya time (they are already in Kenya tz from backend)
+        df["ts_local"] = pd.to_datetime(df["ts"], errors="coerce")
+        st.dataframe(df[["ts_local", "multiplier"]].rename(columns={"ts_local":"ts (EAT)"}).sort_values("ts (EAT)", ascending=False).head(50), use_container_width=True)
+    else:
+        st.info("No rounds available yet for this room.")
+else:
+    st.warning("No rounds data returned.")
 
-while True:
-    rounds_data = smart_fetch(f"rounds/{room}")
-    pred_data = smart_fetch(f"predict/{room}")
+# Stats
+stats = safe_get_json(f"stats/{room}", params={"lookback": lookback})
+if stats:
+    st.markdown("### Statistics")
+    cols = st.columns(4)
+    cols[0].metric("Count", stats["count"])
+    cols[1].metric("Mean", round(stats["mean"], 2))
+    cols[2].metric("Median", round(stats["median"], 2))
+    cols[3].metric("StdDev", round(stats["stdev"], 3))
+    st.write("Empirical P(next ≥ x):", stats.get("prob_ge", {}))
 
-    with placeholder.container():
-        st.subheader(f"📡 Room {room} — Live Updates")
+# Recommendation (final cashout)
+recommend = safe_get_json(f"recommend/{room}", params={"target_prob": target_prob, "lookback": lookback}, timeout=20)
+if recommend:
+    st.markdown("## Final recommended cashout (empirical)")
+    st.success(f"✅ Recommended cashout for target {int(target_prob*100)}% → **{recommend['recommended_cashout']}x**")
+    st.write(f"Achieved empirical prob at that cashout: {recommend['achieved_prob']*100:.1f}% (lookback {recommend['lookback_count']})")
+    st.write(f"Confidence estimate: {recommend['confidence_estimate']*100:.1f}% — volatility: {recommend['volatility']}")
+    st.caption("This is empirical guidance based on historical rounds. Not a guarantee. Use responsibly.")
 
-        if pred_data:
-            st.metric("🎯 Predicted Multiplier", f"{pred_data['predicted_multiplier']}x")
-            st.metric("💰 Suggested Cashout Point", f"{pred_data['cashout_point']}x")
-            st.metric("📈 Confidence", f"{pred_data['confidence']}%")
-            st.caption(f"🕒 Updated at: {pred_data['timestamp']} (Kenyan Time)")
-        else:
-            st.error("Prediction fetch failed for all rooms.")
+st.caption(f"Last refreshed: {datetime.now(KE_TZ).strftime('%Y-%m-%d %H:%M:%S')} EAT")
 
-        if rounds_data:
-            multipliers = [r["multiplier"] for r in rounds_data["rounds"]]
-            timestamps = [r["timestamp"] for r in rounds_data["rounds"]]
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=timestamps, y=multipliers, mode="lines+markers", name="Multiplier"))
-            fig.update_layout(title=f"📊 Room {room} — Last 20 Rounds", xaxis_title="Time", yaxis_title="Multiplier (x)")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No round data available in any room.")
-
-        st.markdown("---")
-        st.caption(f"Last refresh: {get_kenya_time()}")
-
-    time.sleep(10)
+# Auto refresh section (safe)
+auto = st.sidebar.checkbox("Auto refresh", value=True)
+interval = st.sidebar.slider("Auto-refresh interval seconds", 5, 60, 10)
+if auto:
+    time.sleep(interval)
+    st.rerun()
