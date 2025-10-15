@@ -1,4 +1,3 @@
-# backend/db.py
 import os
 from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
