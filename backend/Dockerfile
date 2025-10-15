@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY /backend /app
+
+# Copy backend files
+COPY backend/ /app/
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -19,4 +21,4 @@ RUN pip install -r requirements.txt
 RUN playwright install --with-deps chromium
 
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
