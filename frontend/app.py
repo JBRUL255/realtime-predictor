@@ -1,83 +1,75 @@
 import streamlit as st
 import requests
-import pandas as pd
 import time
+from datetime import datetime
+import pytz
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Aviator Flight Dashboard", layout="wide")
+st.set_page_config(page_title="Aviator Flight Dashboard ✈️", layout="centered")
 
-# ✅ IMPORTANT: Replace this with your actual Render backend URL
-BACKEND_URL = "https://YOUR-BACKEND-SERVICE.onrender.com"
+# Backend URL
+BACKEND_URL = "https://realtime-predictor.onrender.com"
 
-st.title("🛫 Betika Aviator Flight Dashboard (Rooms 1–3)")
+# Title
+st.title("🛫 Aviator Flight Dashboard — Live Prediction")
 
-room = st.sidebar.selectbox("Select Room", ["1", "2", "3"])
-refresh_rate = st.sidebar.slider("Refresh interval (seconds)", 3, 30, 8)
+# Select Room
+room = st.selectbox("Select Aviator Room", ["1", "2", "3"])
+st.markdown("---")
 
-st.markdown(f"### 🎮 Current Room: **{room}**")
+placeholder = st.empty()
 
-rounds_container = st.empty()
-prediction_container = st.empty()
+def get_kenya_time():
+    tz = pytz.timezone("Africa/Nairobi")
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
-
-def fetch_rounds(room_id):
+def fetch_data(endpoint):
     try:
-        url = f"{BACKEND_URL}/rounds/{room_id}"
-        res = requests.get(url, timeout=10)
-        if res.status_code == 200:
-            return res.json()["rounds"]
-        else:
-            st.warning(f"Failed to fetch rounds (status {res.status_code}) from {url}")
-            return []
-    except Exception as e:
-        st.error(f"Cannot fetch rounds: {e}")
-        return []
-
-
-def fetch_prediction(room_id):
-    try:
-        url = f"{BACKEND_URL}/predict/{room_id}"
-        res = requests.get(url, timeout=10)
+        res = requests.get(f"{BACKEND_URL}/{endpoint}", timeout=10)
         if res.status_code == 200:
             return res.json()
-        else:
-            st.warning(f"Prediction fetch failed (status {res.status_code}) from {url}")
-            return None
-    except Exception as e:
-        st.error(f"Cannot fetch prediction: {e}")
+    except Exception:
         return None
+    return None
 
+# Automatically retry and switch rooms if one fails
+def smart_fetch(endpoint):
+    result = fetch_data(endpoint)
+    if result is None or ("detail" in result if isinstance(result, dict) else False):
+        # Switch to next available room
+        current = int(room)
+        alt_room = str((current % 3) + 1)
+        st.warning(f"Room {room} unavailable — switching to Room {alt_room}")
+        time.sleep(1)
+        return fetch_data(endpoint.replace(f"/{room}", f"/{alt_room}"))
+    return result
 
 while True:
-    rounds = fetch_rounds(room)
-    prediction = fetch_prediction(room)
+    rounds_data = smart_fetch(f"rounds/{room}")
+    pred_data = smart_fetch(f"predict/{room}")
 
-    if rounds:
-        df = pd.DataFrame(rounds)
-        rounds_container.subheader("📊 Recent Rounds (Kenyan Time)")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df["timestamp"],
-            y=df["multiplier"],
-            mode="lines+markers",
-            line=dict(shape="spline"),
-            name=f"Room {room}"
-        ))
-        fig.update_layout(
-            xaxis_title="Time",
-            yaxis_title="Multiplier (x)",
-            height=400
-        )
-        rounds_container.plotly_chart(fig, use_container_width=True)
+    with placeholder.container():
+        st.subheader(f"📡 Room {room} — Live Updates")
 
-    if prediction:
-        prediction_container.markdown(f"""
-        ### 🎯 Prediction — Room {prediction['room']}
-        - **Predicted Multiplier:** {prediction['predicted_multiplier']}x  
-        - **Confidence:** {prediction['confidence']}%  
-        - 💰 **Suggested Cashout:** {prediction['cashout_point']}x  
-        - 🕒 **Updated:** {prediction['timestamp']}  
-        """)
+        if pred_data:
+            st.metric("🎯 Predicted Multiplier", f"{pred_data['predicted_multiplier']}x")
+            st.metric("💰 Suggested Cashout Point", f"{pred_data['cashout_point']}x")
+            st.metric("📈 Confidence", f"{pred_data['confidence']}%")
+            st.caption(f"🕒 Updated at: {pred_data['timestamp']} (Kenyan Time)")
+        else:
+            st.error("Prediction fetch failed for all rooms.")
 
-    time.sleep(refresh_rate)
-    st.rerun()
+        if rounds_data:
+            multipliers = [r["multiplier"] for r in rounds_data["rounds"]]
+            timestamps = [r["timestamp"] for r in rounds_data["rounds"]]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=timestamps, y=multipliers, mode="lines+markers", name="Multiplier"))
+            fig.update_layout(title=f"📊 Room {room} — Last 20 Rounds", xaxis_title="Time", yaxis_title="Multiplier (x)")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No round data available in any room.")
+
+        st.markdown("---")
+        st.caption(f"Last refresh: {get_kenya_time()}")
+
+    time.sleep(10)
