@@ -1,4 +1,3 @@
-# frontend/app.py
 import streamlit as st
 import requests
 import pandas as pd
@@ -8,9 +7,8 @@ import pytz
 
 st.set_page_config(page_title="Aviator Risk Analyzer", layout="wide")
 
-# Backend URL — provide as Render env var or input here
+# Backend URL configuration
 BACKEND_URL = st.secrets.get("BACKEND_URL") or st.sidebar.text_input("Backend URL", "http://localhost:8000")
-
 KE_TZ = pytz.timezone("Africa/Nairobi")
 
 st.title("Aviator Risk Analyzer — Rooms 1,2,3 (Kenya time)")
@@ -22,7 +20,7 @@ target_prob_pct = st.sidebar.slider("Desired empirical success probability (%)",
 target_prob = target_prob_pct / 100.0
 
 if st.sidebar.button("Refresh now"):
-    st.experimental_rerun()
+    st.rerun()
 
 # Helpers
 def safe_get_json(path, params=None, timeout=10):
@@ -40,9 +38,14 @@ rounds_resp = safe_get_json(f"rounds/{room}", params={"limit": lookback})
 if rounds_resp and "rounds" in rounds_resp:
     df = pd.DataFrame(rounds_resp["rounds"])
     if not df.empty:
-        # convert timestamps to Kenya time (they are already in Kenya tz from backend)
         df["ts_local"] = pd.to_datetime(df["ts"], errors="coerce")
-        st.dataframe(df[["ts_local", "multiplier"]].rename(columns={"ts_local":"ts (EAT)"}).sort_values("ts (EAT)", ascending=False).head(50), use_container_width=True)
+        st.dataframe(
+            df[["ts_local", "multiplier"]]
+            .rename(columns={"ts_local": "ts (EAT)"})
+            .sort_values("ts (EAT)", ascending=False)
+            .head(50), 
+            use_container_width=True
+        )
     else:
         st.info("No rounds available yet for this room.")
 else:
@@ -59,7 +62,7 @@ if stats:
     cols[3].metric("StdDev", round(stats["stdev"], 3))
     st.write("Empirical P(next ≥ x):", stats.get("prob_ge", {}))
 
-# Recommendation (final cashout)
+# Recommendation
 recommend = safe_get_json(f"recommend/{room}", params={"target_prob": target_prob, "lookback": lookback}, timeout=20)
 if recommend:
     st.markdown("## Final recommended cashout (empirical)")
@@ -70,7 +73,7 @@ if recommend:
 
 st.caption(f"Last refreshed: {datetime.now(KE_TZ).strftime('%Y-%m-%d %H:%M:%S')} EAT")
 
-# Auto refresh section (safe)
+# Auto refresh
 auto = st.sidebar.checkbox("Auto refresh", value=True)
 interval = st.sidebar.slider("Auto-refresh interval seconds", 5, 60, 10)
 if auto:
