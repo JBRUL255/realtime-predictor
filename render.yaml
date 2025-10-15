@@ -4,9 +4,10 @@ services:
     env: python
     plan: free
     buildCommand: |
+      cd backend
       pip install --upgrade pip
-      pip install -r backend/requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+      pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_PATH
         value: /data/aviator.db
@@ -26,9 +27,10 @@ services:
     env: python
     plan: free
     buildCommand: |
+      cd frontend
       pip install --upgrade pip
-      pip install -r frontend/requirements.txt
-    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
+      pip install -r requirements.txt
+    startCommand: cd frontend && streamlit run app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: BACKEND_URL
         fromService:
