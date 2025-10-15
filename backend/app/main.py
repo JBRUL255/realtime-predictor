@@ -4,9 +4,9 @@ from datetime import datetime
 import pytz
 import random
 
-app = FastAPI()
+app = FastAPI(title="Aviator Realtime Predictor API")
 
-# Allow frontend access
+# ✅ Allow frontend calls from any domain (including Render frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,18 +14,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Kenyan timezone
+# ✅ Kenyan timezone
 ke_tz = pytz.timezone("Africa/Nairobi")
 
-# 3 Betika rooms
-rooms_data = {
-    "1": [],
-    "2": [],
-    "3": []
-}
+# ✅ In-memory simulation of rooms (1, 2, 3)
+rooms_data = {"1": [], "2": [], "3": []}
 
-# Generate a new simulated round
-def generate_round(room_id):
+def generate_round(room_id: str):
+    """Simulate a round for a given room."""
     now = datetime.now(ke_tz)
     multiplier = round(random.uniform(1.0, 20.0), 2)
     round_data = {
@@ -38,21 +34,27 @@ def generate_round(room_id):
     return round_data
 
 
+@app.get("/")
+def root():
+    return {"message": "Aviator Realtime Predictor API is live 🚀"}
+
+
 @app.get("/rounds/{room_id}")
 def get_rounds(room_id: str):
     if room_id not in rooms_data:
-        return {"error": "Invalid room ID. Choose 1, 2, or 3."}
-    # Simulate a new round on every fetch
+        return {"error": "Invalid room ID. Use 1, 2, or 3."}
     generate_round(room_id)
-    return {"room": room_id, "rounds": rooms_data[room_id]}
+    return {
+        "room": room_id,
+        "rounds": rooms_data[room_id]
+    }
 
 
 @app.get("/predict/{room_id}")
-def predict_next(room_id: str):
+def predict(room_id: str):
     if room_id not in rooms_data:
-        return {"error": "Invalid room ID. Choose 1, 2, or 3."}
+        return {"error": "Invalid room ID. Use 1, 2, or 3."}
 
-    # Simulated prediction (replace with ML model later)
     predicted_multiplier = round(random.uniform(1.5, 20.0), 2)
     confidence = round(random.uniform(65, 95), 1)
     cashout_point = round(predicted_multiplier * random.uniform(0.55, 0.85), 2)
