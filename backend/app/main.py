@@ -1,4 +1,3 @@
-# backend/main.py
 import threading
 import time
 import os
@@ -10,13 +9,13 @@ import pytz
 import random
 import statistics
 
-from .db import init_db, SessionLocal, Round
+from db import init_db, SessionLocal, Round
 
 # ---------- config ----------
 KE_TZ = pytz.timezone("Africa/Nairobi")
 ROOMS = ["1", "2", "3"]
-SIMULATE_ON_START = os.getenv("SIMULATE_ON_START", "1") == "1"  # default on for safe deploy
-SIMULATE_INTERVAL = int(os.getenv("SIMULATE_INTERVAL", "8"))  # seconds between simulated rounds per room
+SIMULATE_ON_START = os.getenv("SIMULATE_ON_START", "1") == "1"
+SIMULATE_INTERVAL = int(os.getenv("SIMULATE_INTERVAL", "8"))
 
 app = FastAPI(title="Aviator Risk Analyzer (Rooms 1-3)")
 
@@ -31,7 +30,6 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
-    # start simulator thread if enabled
     if SIMULATE_ON_START:
         t = threading.Thread(target=simulate_background, daemon=True)
         t.start()
@@ -56,7 +54,6 @@ def query_rounds(room: str, limit: int = 500):
 
 # ---------- simulator ----------
 def simulate_one_round_for(room: str):
-    # A realistic-ish distribution mix for simulation
     r = random.random()
     if r < 0.1:
         m = round(random.uniform(1.0, 1.9), 2)
@@ -70,7 +67,6 @@ def simulate_one_round_for(room: str):
     return m
 
 def simulate_background():
-    # generate rounds for each room in a round-robin fashion
     while True:
         for room in ROOMS:
             simulate_one_round_for(room)
@@ -100,57 +96,57 @@ def api_stats(room: str, lookback: int = Query(200, ge=10, le=5000)):
     mean = statistics.mean(mults)
     median = statistics.median(mults)
     stdev = statistics.pstdev(mults) if len(mults) > 1 else 0.0
-    # empirical probabilities for common thresholds
-    def prob_ge(x): return sum(1 for v in mults if v >= x) / len(mults)
+    
+    def prob_ge(x): 
+        return sum(1 for v in mults if v >= x) / len(mults)
+    
     return {
         "room": room,
         "count": len(mults),
         "mean": round(mean, 3),
         "median": round(median, 3),
         "stdev": round(stdev, 3),
-        "prob_ge": {"2.0": round(prob_ge(2.0),3), "5.0": round(prob_ge(5.0),3), "10.0": round(prob_ge(10.0),3)}
+        "prob_ge": {
+            "2.0": round(prob_ge(2.0), 3), 
+            "5.0": round(prob_ge(5.0), 3), 
+            "10.0": round(prob_ge(10.0), 3)
+        }
     }
 
 @app.get("/recommend/{room}")
-def api_recommend(room: str,
-                  target_prob: float = Query(0.70, ge=0.01, le=0.99),
-                  lookback: int = Query(500, ge=50, le=2000)):
-    """
-    Recommend a conservative cashout multiplier such that historically P(multiplier >= cashout) >= target_prob.
-    Returns recommended_cashout, achieved_prob, confidence_estimate (derived from volatility).
-    """
+def api_recommend(
+    room: str,
+    target_prob: float = Query(0.70, ge=0.01, le=0.99),
+    lookback: int = Query(500, ge=50, le=2000)
+):
     if room not in ROOMS:
         raise HTTPException(status_code=404, detail="Invalid room id. Use 1,2,3.")
+    
     rows = query_rounds(room, limit=lookback)
-    mults = sorted([r.multiplier for r in rows if r.multiplier is not None])
+    mults = [r.multiplier for r in rows if r.multiplier is not None]
     if not mults:
         raise HTTPException(status_code=404, detail="No numeric rounds available yet")
 
     n = len(mults)
-    # find the largest x such that count(v >= x)/n >= target_prob
-    best = None
-    # iterate unique sorted ascending to find the highest satisfying value
     unique_sorted = sorted(set(mults))
+    
+    best = None
     for x in unique_sorted:
         prob = sum(1 for v in mults if v >= x) / n
         if prob >= target_prob:
             best = x
+    
     if best is None:
-        # if none meet target, pick the min (most conservative) or fallback multiplier
-        best = unique_sorted[0]
-
-    # Conservative adjustment: back off a little (2% or fixed lower bound)
+        best = min(unique_sorted)
+    
     recommended = round(max(1.0, best * 0.98), 2)
-
     achieved_prob = sum(1 for v in mults if v >= recommended) / n
 
-    # confidence estimate: inverse relation with volatility of lookback
     stdev = statistics.pstdev(mults) if len(mults) > 1 else 0.0
     mean = statistics.mean(mults)
     volatility = (stdev / mean) if mean > 0 else 0.0
-    # confidence estimate is (1 - volatility) scaled to 0..1 then clipped
     confidence_est = max(0.1, min(0.95, 1 - volatility))
-    # return human-friendly percentage
+    
     return {
         "room": room,
         "target_prob": round(target_prob, 3),
