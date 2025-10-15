@@ -6,7 +6,8 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Aviator Flight Dashboard", layout="wide")
 
-BACKEND_URL = "https://your-backend-url.onrender.com"  # Replace with your backend URL
+# ✅ IMPORTANT: Replace this with your actual Render backend URL
+BACKEND_URL = "https://YOUR-BACKEND-SERVICE.onrender.com"
 
 st.title("🛫 Betika Aviator Flight Dashboard (Rooms 1–3)")
 
@@ -21,11 +22,12 @@ prediction_container = st.empty()
 
 def fetch_rounds(room_id):
     try:
-        res = requests.get(f"{BACKEND_URL}/rounds/{room_id}", timeout=10)
+        url = f"{BACKEND_URL}/rounds/{room_id}"
+        res = requests.get(url, timeout=10)
         if res.status_code == 200:
             return res.json()["rounds"]
         else:
-            st.warning(f"Failed to fetch rounds (status {res.status_code})")
+            st.warning(f"Failed to fetch rounds (status {res.status_code}) from {url}")
             return []
     except Exception as e:
         st.error(f"Cannot fetch rounds: {e}")
@@ -34,18 +36,18 @@ def fetch_rounds(room_id):
 
 def fetch_prediction(room_id):
     try:
-        res = requests.get(f"{BACKEND_URL}/predict/{room_id}", timeout=10)
+        url = f"{BACKEND_URL}/predict/{room_id}"
+        res = requests.get(url, timeout=10)
         if res.status_code == 200:
             return res.json()
         else:
-            st.warning("Prediction fetch failed.")
+            st.warning(f"Prediction fetch failed (status {res.status_code}) from {url}")
             return None
     except Exception as e:
         st.error(f"Cannot fetch prediction: {e}")
         return None
 
 
-# Main loop for real-time refresh
 while True:
     rounds = fetch_rounds(room)
     prediction = fetch_prediction(room)
