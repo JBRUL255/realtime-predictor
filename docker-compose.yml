@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_PATH=/data/aviator.db
+      - SIMULATE_ON_START=1
+      - SIMULATE_INTERVAL=8
+      - TZ=Africa/Nairobi
+    volumes:
+      - aviator_data:/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - TZ=Africa/Nairobi
+    depends_on:
+      - backend
+
+volumes:
+  aviator_data:
