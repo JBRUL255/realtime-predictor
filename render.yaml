@@ -17,7 +17,7 @@ services:
       - key: TZ
         value: Africa/Nairobi
     disk:
-      name: aviator_disk
+      name: aviator_storage
       mountPath: /data
       sizeGB: 1
 
