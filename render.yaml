@@ -1,25 +1,39 @@
-# render.yaml
 services:
   - type: web
-    name: realtime-predictor-backend
+    name: aviator-backend
     env: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r backend/requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: DATABASE_PATH
+        value: /data/aviator.db
+      - key: SIMULATE_ON_START
+        value: "1"
+      - key: SIMULATE_INTERVAL
+        value: "8"
       - key: TZ
         value: Africa/Nairobi
+    disk:
+      name: aviator_disk
+      mountPath: /data
+      sizeGB: 1
 
   - type: web
-    name: realtime-predictor-frontend
+    name: aviator-frontend
     env: python
     plan: free
-    buildCommand: pip install -r frontend/requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r frontend/requirements.txt
     startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: BACKEND_URL
         fromService:
-          name: realtime-predictor-backend
           type: web
+          name: aviator-backend
+          property: url
       - key: TZ
         value: Africa/Nairobi
